@@ -107,13 +107,31 @@ WSGI_APPLICATION = 'NgoAuth.wsgi.application'
 # }
 
 
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.mysql",
+#         "HOST": os.environ.get('MYSQLHOST', 'localhost'),
+#         "NAME": os.environ.get('MYSQLDATABASE', 'ngoauth'),
+#         "USER": os.environ.get('MYSQLUSER', 'root'),
+#         "PASSWORD": os.environ.get('MYSQLPASSWORD', '1234'),
+#         "PORT": os.environ.get('MYSQLPORT', '3306'),
+#     }
+# }
+
+
+
+# Use 'railway' on Railway, 'ngoauth' locally
+DB_NAME = os.environ.get('MYSQLDATABASE')
+if DB_NAME is None:
+    DB_NAME = 'ngoauth'  # Local fallback
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
         "HOST": os.environ.get('MYSQLHOST', 'localhost'),
-        "NAME": os.environ.get('MYSQLDATABASE', 'ngoauth'),
+        "NAME": DB_NAME,
         "USER": os.environ.get('MYSQLUSER', 'root'),
-        "PASSWORD": os.environ.get('MYSQLPASSWORD', '1234'),
+        "PASSWORD": os.environ.get('MYSQLPASSWORD', ''),
         "PORT": os.environ.get('MYSQLPORT', '3306'),
     }
 }
