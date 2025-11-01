@@ -5,3 +5,4 @@ Pillow==10.3.0
 django-cors-headers==4.3.1
 python-dotenv==1.0.1
 django-environ==0.11.2
+PyMySQL==1.0.4
