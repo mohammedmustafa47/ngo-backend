@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-
+import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -95,14 +95,26 @@ WSGI_APPLICATION = 'NgoAuth.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.mysql",
+#         "HOST": "localhost",
+#         "NAME": "ngoauth",
+#         "USER": "root",
+#         "PASSWORD": "1234",
+#         # "PORT" : "3306"
+#     }
+# }
+
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "HOST": "localhost",
-        "NAME": "ngoauth",
-        "USER": "root",
-        "PASSWORD": "1234",
-        # "PORT" : "3306"
+        "HOST": os.environ.get('MYSQLHOST', 'localhost'),
+        "NAME": os.environ.get('MYSQLDATABASE', 'ngoauth'),
+        "USER": os.environ.get('MYSQLUSER', 'root'),
+        "PASSWORD": os.environ.get('MYSQLPASSWORD', '1234'),
+        "PORT": os.environ.get('MYSQLPORT', '3306'),
     }
 }
 
