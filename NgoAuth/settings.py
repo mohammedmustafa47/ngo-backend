@@ -12,8 +12,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -25,7 +28,7 @@ SECRET_KEY = 'django-insecure-b$sle-a5)t9u*kbq-#vjgwi(m)xuzj#iavcu5jky6^*u7kaws7
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 
@@ -59,6 +62,7 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8100",
     "http://127.0.0.1:8100",
+    
 ]
 
 REST_FRAMEWORK = {
@@ -98,43 +102,26 @@ WSGI_APPLICATION = 'NgoAuth.wsgi.application'
 # DATABASES = {
 #     "default": {
 #         "ENGINE": "django.db.backends.mysql",
-#         "HOST": "localhost",
-#         "NAME": "ngoauth",
-#         "USER": "root",
-#         "PASSWORD": "1234",
-#         # "PORT" : "3306"
+#         "HOST": "ngodatabase.clg0aa6qqgju.ap-south-2.rds.amazonaws.com",
+#         "NAME": "ngoproject",
+#         "USER": "admin",
+#         "PASSWORD": "hanzala1234",
+#         "PORT" : "3306"
 #     }
 # }
-
-
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.mysql",
-#         "HOST": os.environ.get('MYSQLHOST', 'localhost'),
-#         "NAME": os.environ.get('MYSQLDATABASE', 'ngoauth'),
-#         "USER": os.environ.get('MYSQLUSER', 'root'),
-#         "PASSWORD": os.environ.get('MYSQLPASSWORD', '1234'),
-#         "PORT": os.environ.get('MYSQLPORT', '3306'),
-#     }
-# }
-
-
-
-# Use 'railway' on Railway, 'ngoauth' locally
-DB_NAME = os.environ.get('MYSQLDATABASE')
-if DB_NAME is None:
-    DB_NAME = 'ngoauth'  # Local fallback
-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "HOST": os.environ.get('MYSQLHOST', 'localhost'),
-        "NAME": DB_NAME,
-        "USER": os.environ.get('MYSQLUSER', 'root'),
-        "PASSWORD": os.environ.get('MYSQLPASSWORD', ''),
-        "PORT": os.environ.get('MYSQLPORT', '3306'),
+        "HOST": "localhost",
+        "NAME": "ngoauth",
+        "USER": "root",
+        "PASSWORD": "1234",
+        # "PORT" : "3306"
     }
 }
+
+
+
 
 
 # Password validation
@@ -181,3 +168,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'authapi.User'
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Email settings (used for sending OTP codes for email verification and
+# password reset). Defaults to printing emails to the console during
+# development; set EMAIL_HOST_USER / EMAIL_HOST_PASSWORD env vars (a Gmail
+# App Password, not the account password) to send real emails via Gmail SMTP.
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+
+if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or 'no-reply@ngoauth.local'
