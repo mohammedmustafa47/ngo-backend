@@ -8,7 +8,13 @@ from rest_framework.permissions import AllowAny
 # from django.contrib.auth.models import User
 from .models import Role,UserRole,Donation
 from django.contrib.auth import get_user_model
-from .serializers import RegisterSerializer, DonationSerializer,LoginSerializer,UserSerializer,UserRoleSerializer,RoleSerializer
+from .serializers import (
+    RegisterSerializer, DonationSerializer, LoginSerializer, UserSerializer,
+    UserRoleSerializer, RoleSerializer, VerifyEmailSerializer,
+    PasswordResetRequestSerializer, PasswordResetVerifySerializer,
+    PasswordResetConfirmSerializer, ProfileSerializer, ResendOTPSerializer,
+)
+from .utils import create_otp, send_otp_email
 from django.contrib.auth import authenticate
 from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
 from .permissions import HasRole, IsAdminRole
@@ -28,6 +34,102 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {'detail': 'Registration successful. A verification code has been sent to your email.'},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class VerifyEmailView(generics.GenericAPIView):
+    serializer_class = VerifyEmailSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user']
+        otp = serializer.validated_data['otp_obj']
+
+        user.is_email_verified = True
+        user.is_active = True
+        user.save()
+
+        otp.is_used = True
+        otp.save()
+
+        return Response({'detail': 'Email verified successfully.'}, status=status.HTTP_200_OK)
+
+
+class ResendOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+        otp = create_otp(email, 'verify_email')
+        send_otp_email(email, otp.code, 'verify_email')
+
+        return Response({'detail': 'A new verification code has been sent to your email.'}, status=status.HTTP_200_OK)
+
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    serializer_class = PasswordResetRequestSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+        otp = create_otp(email, 'reset_password')
+        send_otp_email(email, otp.code, 'reset_password')
+
+        return Response({'detail': 'A password reset code has been sent to your email.'}, status=status.HTTP_200_OK)
+
+
+class PasswordResetVerifyView(generics.GenericAPIView):
+    serializer_class = PasswordResetVerifySerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        otp = serializer.validated_data['otp_obj']
+        otp.is_verified = True
+        otp.save()
+
+        return Response({'detail': 'OTP verified. You can now set a new password.'}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user']
+        otp = serializer.validated_data['otp_obj']
+
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+
+        otp.is_used = True
+        otp.save()
+
+        return Response({'detail': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
+
+
 class LoginView(generics.GenericAPIView):
     serializer_class=LoginSerializer
 
@@ -37,19 +139,37 @@ class LoginView(generics.GenericAPIView):
         role=request.data.get('role')
         user=authenticate(username=username,password=password,role=role)
 
-        if user is not None:
-            refresh=RefreshToken.for_user(user)
-            user_serializer=UserSerializer(user)
-            return Response({
-                'refresh':str(refresh),
-                'access':str(refresh.access_token),
-                'user':user_serializer.data,
-                'result':True
-            })
-        else:
-            
+        if user is None:
+            try:
+                unverified_user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                unverified_user = None
+
+            if unverified_user is not None and not unverified_user.is_email_verified:
+                return Response({'detail': 'Email not verified. Please verify your email before logging in.'}, status=403)
+
             return Response({'detail':'invalid credentials'},status=401)
+
+        if not user.is_email_verified:
+            return Response({'detail': 'Email not verified. Please verify your email before logging in.'}, status=403)
+
+        refresh=RefreshToken.for_user(user)
+        user_serializer=UserSerializer(user)
+        return Response({
+            'refresh':str(refresh),
+            'access':str(refresh.access_token),
+            'user':user_serializer.data,
+            'result':True
+        })
         
+class ProfileView(generics.RetrieveAPIView):
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+
 class DashboardView(APIView):
     permission_classes=(IsAuthenticated)
     # required_role='donor',HasRole

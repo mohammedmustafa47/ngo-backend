@@ -1,6 +1,9 @@
+import random
 from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
+from datetime import timedelta
 
 # Create your models here.
 
@@ -15,9 +18,34 @@ class User(AbstractUser):
 
     # Add role field with choices
     role = models.CharField(max_length=10, choices=ROLES,default= 'donor')
+    is_email_verified = models.BooleanField(default=False)
 
     # def __str__(self):
     #     return self.username
+
+
+class OTP(models.Model):
+    PURPOSE_CHOICES = (
+        ('verify_email', 'Verify Email'),
+        ('reset_password', 'Reset Password'),
+    )
+
+    email = models.EmailField()
+    code = models.CharField(max_length=4)
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_verified = models.BooleanField(default=False)
+    is_used = models.BooleanField(default=False)
+
+    def is_expired(self):
+        return timezone.now() > self.created_at + timedelta(minutes=10)
+
+    @staticmethod
+    def generate_code():
+        return f"{random.randint(0, 9999):04d}"
+
+    def __str__(self):
+        return f"{self.email} - {self.purpose} - {self.code}"
 
 
 class Role(models.Model):
