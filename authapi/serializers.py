@@ -3,20 +3,31 @@ from rest_framework import serializers
 # from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import Role,UserRole,Donation,OTP
-from .utils import create_otp, send_otp_email
+from .models import Role,UserRole,Donation,OTP,Area
+from .utils import create_otp, send_otp_email, resolve_area
 # ,FoodDonation
 
 User = get_user_model()
 
 GMAIL_REGEX = re.compile(r'^[A-Za-z0-9_.+-]+@gmail\.com$')
 
+class AreaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Area
+        fields = ('id', 'name', 'pincodes', 'is_active', 'created_at')
+
+
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
+    area = serializers.SerializerMethodField()
+
     class Meta:
         model=User
-        fields=('id','username','email', 'role')
-        
+        fields=('id','username','email', 'role', 'area')
+
+    def get_area(self, obj):
+        return obj.area.name if obj.area_id else None
+
     def get_role(self, obj):
         """Get role from UserRole relationship"""
         try:
@@ -35,9 +46,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     role=serializers.CharField(write_only=True,required=False)
+    pincode=serializers.CharField(write_only=True, required=True, max_length=10)
+
     class Meta:
         model=User
-        fields=('username','email','password','role')
+        fields=('username','email','password','role','pincode')
 
     def validate_email(self, value):
         if not GMAIL_REGEX.match(value):
@@ -56,14 +69,16 @@ class RegisterSerializer(serializers.ModelSerializer):
             """Custom validation at serializer level"""
             role_name = data.get('role')
 
-            if role_name and role_name.lower() == "admin":
-                if UserRole.objects.filter(role__name__iexact="admin").exists():
-                    raise serializers.ValidationError("Only one Admin account is allowed.")
+            if role_name and role_name.lower() == 'super_admin':
+                raise serializers.ValidationError(
+                    {"role": "Super Admin accounts cannot be created through registration."}
+                )
 
             return data
 
     def create(self,validated_data):
         role_name=validated_data.pop('role',None)
+        pincode=validated_data.pop('pincode')
         user=User.objects.create_user(
             validated_data['username'],
             validated_data['email'],
@@ -71,7 +86,25 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         user.is_active = False
         user.is_email_verified = False
+        user.pincode = pincode
+
+        area = resolve_area(pincode)
+        is_area_admin_signup = bool(role_name) and role_name.lower() == 'admin'
+
+        if is_area_admin_signup:
+            if area is None:
+                user.delete()
+                raise serializers.ValidationError({
+                    "pincode": "No matching area found for this pincode. An Area Admin account "
+                               "requires an existing area — contact the Super Admin."
+                })
+            if User.objects.filter(role='admin', area=area).exists():
+                user.delete()
+                raise serializers.ValidationError({"role": "This area already has an Area Admin."})
+
+        user.area = area
         user.save()
+
         # If a role was provided, try to resolve it and attach it to the user
         if role_name:
             try:
@@ -102,12 +135,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
+    area = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             'id', 'username', 'email', 'first_name', 'last_name',
-            'role', 'is_email_verified', 'date_joined', 'last_login',
+            'role', 'area', 'pincode', 'is_email_verified', 'date_joined', 'last_login',
         )
         read_only_fields = fields
 
@@ -116,6 +150,13 @@ class ProfileSerializer(serializers.ModelSerializer):
             return UserRole.objects.get(user=obj).role.name
         except UserRole.DoesNotExist:
             return getattr(obj, 'role', None)
+
+    def get_area(self, obj):
+        if obj.area_id:
+            return obj.area.name
+        if str(obj.role).lower() == 'super_admin':
+            return None
+        return 'pending'
 
 
 class LoginSerializer(serializers.Serializer):
@@ -225,6 +266,29 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         data['otp_obj'] = otp
         return data
 
+class AssignAreaSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    area_id = serializers.IntegerField()
+
+    def validate(self, data):
+        try:
+            user = User.objects.get(id=data['user_id'])
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"user_id": "User not found."})
+
+        try:
+            area = Area.objects.get(id=data['area_id'])
+        except Area.DoesNotExist:
+            raise serializers.ValidationError({"area_id": "Area not found."})
+
+        if user.role == 'admin' and User.objects.filter(role='admin', area=area).exclude(id=user.id).exists():
+            raise serializers.ValidationError({"area_id": "This area already has an Area Admin."})
+
+        data['user'] = user
+        data['area'] = area
+        return data
+
+
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model=Role
@@ -267,4 +331,4 @@ class DonationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Donation
         fields = '__all__'
-        read_only_fields = ['donor', 'status', 'volunteer', 'created_at']
+        read_only_fields = ['donor', 'status', 'volunteer', 'area', 'created_at']
