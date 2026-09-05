@@ -1,7 +1,19 @@
 from django.core.mail import send_mail
 from django.conf import settings
 
-from .models import OTP
+from .models import OTP, Area
+
+
+def resolve_area(pincode):
+    """Match a pincode to an active Area. Returns None if no Area covers
+    it yet (the caller should treat the user as pending area assignment)."""
+    if not pincode:
+        return None
+    pincode = str(pincode).strip()
+    for area in Area.objects.filter(is_active=True):
+        if pincode in (area.pincodes or []):
+            return area
+    return None
 
 
 def create_otp(email, purpose):
