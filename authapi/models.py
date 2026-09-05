@@ -8,17 +8,38 @@ from datetime import timedelta
 # Create your models here.
 
 
+class Area(models.Model):
+    """A geographic zone (e.g. a town) with its own Area Admin, donors,
+    and volunteers. Matched at signup by pincode."""
+
+    name = models.CharField(max_length=100, unique=True)
+    pincodes = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
 class User(AbstractUser):
     # Define role choices
     ROLES = (
-        ('admin', 'Admin'),
+        ('super_admin', 'Super Admin'),
+        ('admin', 'Area Admin'),
         ('donor', 'Donor'),
         ('volunteer', 'Volunteer'),
     )
 
     # Add role field with choices
-    role = models.CharField(max_length=10, choices=ROLES,default= 'donor')
+    role = models.CharField(max_length=15, choices=ROLES,default= 'donor')
     is_email_verified = models.BooleanField(default=False)
+    pincode = models.CharField(max_length=10, blank=True)
+    area = models.ForeignKey(
+        'Area', on_delete=models.SET_NULL, null=True, blank=True, related_name='users'
+    )
+
+    class Meta:
+        ordering = ['id']
 
     # def __str__(self):
     #     return self.username
@@ -89,7 +110,14 @@ class Donation(models.Model):
         blank=True,
         related_name='volunteer_donations'
     )
+    area = models.ForeignKey(
+        'Area', on_delete=models.SET_NULL, null=True, blank=True, related_name='donations'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.item_name} ({self.status})"
