@@ -6,20 +6,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny
 # from django.contrib.auth.models import User
-from .models import Role,UserRole,Donation
+from .models import Role,UserRole,Donation,Area
 from django.contrib.auth import get_user_model
 from .serializers import (
     RegisterSerializer, DonationSerializer, LoginSerializer, UserSerializer,
     UserRoleSerializer, RoleSerializer, VerifyEmailSerializer,
     PasswordResetRequestSerializer, PasswordResetVerifySerializer,
     PasswordResetConfirmSerializer, ProfileSerializer, ResendOTPSerializer,
+    AreaSerializer, AssignAreaSerializer,
 )
 from .utils import create_otp, send_otp_email
 from django.contrib.auth import authenticate
 from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
-from .permissions import HasRole, IsAdminRole
+from .permissions import HasRole, IsAdminRole, IsOwnerOrAdmin, IsSuperAdmin, IsAreaOrSuperAdmin
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
+from rest_framework.throttling import ScopedRateThrottle
 from django_filters.rest_framework import DjangoFilterBackend
 # FoodDonationSerializer,,FoodDonation
 
@@ -68,6 +70,8 @@ class VerifyEmailView(generics.GenericAPIView):
 class ResendOTPView(generics.GenericAPIView):
     serializer_class = ResendOTPSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'otp_resend'
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -83,6 +87,8 @@ class ResendOTPView(generics.GenericAPIView):
 class PasswordResetRequestView(generics.GenericAPIView):
     serializer_class = PasswordResetRequestSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'password_reset'
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -184,17 +190,67 @@ class DashboardView(APIView):
 class UserViewSet(ModelViewSet):
     queryset=Role.objects.all()
     serializer_class=RoleSerializer
-    
+    permission_classes = [IsAreaOrSuperAdmin]
+
 
 class UserRoleViewSet(ModelViewSet):
     queryset=UserRole.objects.all()
     serializer_class=UserRoleSerializer
+    permission_classes = [IsAreaOrSuperAdmin]
 
 class AllUserViewSet(ModelViewSet):
-    queryset=User.objects.all()
     serializer_class=UserSerializer
-    # Use custom permission that checks the project's `role`/`UserRole` setup
-    permission_classes = [IsAdminRole]
+    # Area Admins only see their own area's users; Super Admin sees everyone.
+    permission_classes = [IsAreaOrSuperAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'super_admin':
+            return User.objects.all()
+        elif user.role == 'admin':
+            return User.objects.filter(area=user.area)
+        return User.objects.none()
+
+
+class AreaViewSet(ModelViewSet):
+    """Super Admin manages areas (open new towns). Any authenticated user
+    can read the list/detail so an Area Admin can see their own area."""
+    queryset = Area.objects.all()
+    serializer_class = AreaSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        return [IsSuperAdmin()]
+
+
+class PendingAreaUsersView(generics.ListAPIView):
+    """Super Admin queue of signups whose pincode didn't match any Area yet."""
+    serializer_class = UserSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        return User.objects.filter(area__isnull=True).exclude(role='super_admin')
+
+
+class AssignAreaView(generics.GenericAPIView):
+    """Super Admin assigns a pending (or existing) user to an Area."""
+    serializer_class = AssignAreaSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user']
+        area = serializer.validated_data['area']
+        user.area = area
+        user.save()
+
+        return Response(
+            {'detail': f'{user.username} has been assigned to area "{area.name}".'},
+            status=status.HTTP_200_OK,
+        )
 
 class DonationViewSet(viewsets.ModelViewSet):
     queryset = Donation.objects.all().order_by('-created_at')
@@ -203,15 +259,15 @@ class DonationViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status']  # <-- enable status filtering
 
     def get_permissions(self):
-        if self.action in ['create']:
+        if self.action in ['create', 'pick_donation', 'update_status']:
             return [permissions.IsAuthenticated()]
-        elif self.action in ['pick_donation', 'update_status']:
-            return [permissions.IsAuthenticated()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), IsOwnerOrAdmin()]
         else:
-            return [permissions.AllowAny()]
+            return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        serializer.save(donor=self.request.user)
+        serializer.save(donor=self.request.user, area=self.request.user.area)
 
     def get_queryset(self):
         user = self.request.user
@@ -221,8 +277,10 @@ class DonationViewSet(viewsets.ModelViewSet):
         if user.role == 'donor':
             return Donation.objects.filter(donor=user)
         elif user.role == 'volunteer':
-            return Donation.objects.filter(status='pending') | Donation.objects.filter(volunteer=user)
+            return Donation.objects.filter(status='pending', area=user.area) | Donation.objects.filter(volunteer=user)
         elif user.role == 'admin':
+            return Donation.objects.filter(area=user.area)
+        elif user.role == 'super_admin':
             return Donation.objects.all()
         return Donation.objects.none()
 
