@@ -3,10 +3,7 @@ djangorestframework==3.15.1
 djangorestframework-simplejwt==5.3.1
 Pillow==10.3.0
 django-cors-headers==4.3.1
-python-dotenv==1.0.1
-django-environ==0.11.2
-PyMySQL>=1.1.0
 django-filter==23.5
-cryptography==41.0.7
-gunicorn==21.2.0
-drf-nested-routers==0.94.1
+mysqlclient
+zappa>=0.58.0
+python-dotenv==1.0.1
