@@ -1,0 +1,17 @@
+{
+    "dev": {
+        "aws_region": "ap-south-2",
+        "django_settings": "NgoAuth.settings",
+        "exclude": [
+            "boto3",
+            "dateutil",
+            "botocore",
+            "s3transfer",
+            "concurrent"
+        ],
+        "profile_name": "default",
+        "project_name": "djangoauth",
+        "runtime": "python3.9",
+        "s3_bucket": "zappa-ied5f32k4"
+    }
+}

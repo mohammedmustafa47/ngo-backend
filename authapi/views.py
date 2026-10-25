@@ -13,7 +13,7 @@ from .serializers import (
     UserRoleSerializer, RoleSerializer, VerifyEmailSerializer,
     PasswordResetRequestSerializer, PasswordResetVerifySerializer,
     PasswordResetConfirmSerializer, ProfileSerializer, ResendOTPSerializer,
-    AreaSerializer, AssignAreaSerializer,
+    AreaSerializer, AssignAreaSerializer, CreateAreaAdminSerializer,
 )
 from .utils import create_otp, send_otp_email
 from django.contrib.auth import authenticate
@@ -140,18 +140,23 @@ class LoginView(generics.GenericAPIView):
     serializer_class=LoginSerializer
 
     def post(self,request,*args,**kwargs):
-        username=request.data.get('username')
+        email=request.data.get('email')
         password=request.data.get('password')
         role=request.data.get('role')
-        user=authenticate(username=username,password=password,role=role)
+
+        try:
+            target_user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            target_user = None
+
+        # authenticate() still checks Django's USERNAME_FIELD ('username')
+        # under the hood, so resolve email -> username first.
+        user = None
+        if target_user is not None:
+            user = authenticate(username=target_user.username, password=password, role=role)
 
         if user is None:
-            try:
-                unverified_user = User.objects.get(username=username)
-            except User.DoesNotExist:
-                unverified_user = None
-
-            if unverified_user is not None and not unverified_user.is_email_verified:
+            if target_user is not None and not target_user.is_email_verified:
                 return Response({'detail': 'Email not verified. Please verify your email before logging in.'}, status=403)
 
             return Response({'detail':'invalid credentials'},status=401)
@@ -233,6 +238,16 @@ class PendingAreaUsersView(generics.ListAPIView):
         return User.objects.filter(area__isnull=True).exclude(role='super_admin')
 
 
+class UnattendedDonationsView(generics.ListAPIView):
+    """Super Admin queue of pending donations in areas with no active Area Admin."""
+    serializer_class = DonationSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def get_queryset(self):
+        staffed = User.objects.filter(role='admin', is_active=True, area__isnull=False).values('area')
+        return Donation.objects.filter(status='pending').exclude(area__in=staffed)
+
+
 class AssignAreaView(generics.GenericAPIView):
     """Super Admin assigns a pending (or existing) user to an Area."""
     serializer_class = AssignAreaSerializer
@@ -252,6 +267,18 @@ class AssignAreaView(generics.GenericAPIView):
             status=status.HTTP_200_OK,
         )
 
+class CreateAreaAdminView(generics.CreateAPIView):
+    """Super Admin directly provisions an Area Admin account for an Area."""
+    serializer_class = CreateAreaAdminSerializer
+    permission_classes = [IsSuperAdmin]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
 class DonationViewSet(viewsets.ModelViewSet):
     queryset = Donation.objects.all().order_by('-created_at')
     serializer_class = DonationSerializer
@@ -267,7 +294,7 @@ class DonationViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        serializer.save(donor=self.request.user, area=self.request.user.area)
+        serializer.save(donor=self.request.user)
 
     def get_queryset(self):
         user = self.request.user

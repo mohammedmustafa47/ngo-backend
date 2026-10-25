@@ -8,7 +8,7 @@ from .views import (
     RegisterView,LoginView,DashboardView,AllUserViewSet,DonationViewSet,
     VerifyEmailView, PasswordResetRequestView, PasswordResetVerifyView,
     PasswordResetConfirmView, ProfileView, ResendOTPView, AreaViewSet,
-    PendingAreaUsersView, AssignAreaView,
+    PendingAreaUsersView, UnattendedDonationsView, AssignAreaView, CreateAreaAdminView,
 )
 from .analytics import (
     SuperAdminAnalyticsView, AreaAdminAnalyticsView, DonorAnalyticsView, VolunteerAnalyticsView,
@@ -34,7 +34,9 @@ urlpatterns = [
     path('auth_password_reset/verify-otp',PasswordResetVerifyView.as_view(),name="auth_password_reset_verify"),
     path('auth_password_reset/confirm',PasswordResetConfirmView.as_view(),name="auth_password_reset_confirm"),
     path('pending-area-users',PendingAreaUsersView.as_view(),name="pending_area_users"),
+    path('unattended-donations',UnattendedDonationsView.as_view(),name="unattended_donations"),
     path('assign-area',AssignAreaView.as_view(),name="assign_area"),
+    path('create-area-admin',CreateAreaAdminView.as_view(),name="create_area_admin"),
     path('analytics/super-admin',SuperAdminAnalyticsView.as_view(),name="analytics_super_admin"),
     path('analytics/area-admin',AreaAdminAnalyticsView.as_view(),name="analytics_area_admin"),
     path('analytics/donor',DonorAnalyticsView.as_view(),name="analytics_donor"),

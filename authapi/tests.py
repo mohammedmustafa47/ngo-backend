@@ -48,7 +48,7 @@ class AuthFlowTests(APITestCase):
     def test_login_blocked_until_email_verified(self):
         self.register()
         response = self.client.post('/authapi/auth_login', {
-            'username': 'donor1', 'password': 'StrongPass123!',
+            'email': 'donor1@gmail.com', 'password': 'StrongPass123!',
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
@@ -62,7 +62,7 @@ class AuthFlowTests(APITestCase):
         self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
 
         login_response = self.client.post('/authapi/auth_login', {
-            'username': 'donor1', 'password': 'StrongPass123!',
+            'email': 'donor1@gmail.com', 'password': 'StrongPass123!',
         }, format='json')
         self.assertEqual(login_response.status_code, status.HTTP_200_OK)
         self.assertIn('access', login_response.data)
@@ -114,7 +114,7 @@ class AuthFlowTests(APITestCase):
         self.assertEqual(confirm_response.status_code, status.HTTP_200_OK)
 
         login_response = self.client.post('/authapi/auth_login', {
-            'username': 'donor1', 'password': 'NewStrongPass456!',
+            'email': 'donor1@gmail.com', 'password': 'NewStrongPass456!',
         }, format='json')
         self.assertEqual(login_response.status_code, status.HTTP_200_OK)
 
@@ -140,10 +140,13 @@ class AuthFlowTests(APITestCase):
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class DonationLifecycleTests(APITestCase):
     def make_verified_user(self, username, email, role='donor'):
+        if not hasattr(self, 'area'):
+            self.area = Area.objects.create(name='Murudeshwar', pincodes=['581342'])
         user = User.objects.create_user(username=username, email=email, password='StrongPass123!')
         user.is_active = True
         user.is_email_verified = True
         user.role = role
+        user.area = self.area
         user.save()
         return user
 
@@ -154,7 +157,7 @@ class DonationLifecycleTests(APITestCase):
         self.admin = self.make_verified_user('admin2', 'admin2@gmail.com', role='admin')
 
     def login(self, username, password='StrongPass123!'):
-        response = self.client.post('/authapi/auth_login', {'username': username, 'password': password}, format='json')
+        response = self.client.post('/authapi/auth_login', {'email': f'{username}@gmail.com', 'password': password}, format='json')
         return response.data['access']
 
     def auth(self, token):
@@ -163,7 +166,7 @@ class DonationLifecycleTests(APITestCase):
     def create_donation(self):
         self.auth(self.login('donor2'))
         response = self.client.post('/authapi/donations/', {
-            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'contact_number': '1234567890',
+            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'pickup_pincode': '581342', 'contact_number': '1234567890',
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response.data['id']
@@ -250,7 +253,7 @@ class AreaHierarchyTests(APITestCase):
         self.volunteer_b = self.make_user('volb', 'volb@gmail.com', role='volunteer', area=self.area_b)
 
     def login(self, username, password='StrongPass123!'):
-        response = self.client.post('/authapi/auth_login', {'username': username, 'password': password}, format='json')
+        response = self.client.post('/authapi/auth_login', {'email': f'{username}@gmail.com', 'password': password}, format='json')
         return response.data['access']
 
     def auth(self, token):
@@ -259,10 +262,59 @@ class AreaHierarchyTests(APITestCase):
     def create_donation_as(self, username):
         self.auth(self.login(username))
         response = self.client.post('/authapi/donations/', {
-            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'contact_number': '1234567890',
+            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'pickup_pincode': '581342', 'contact_number': '1234567890',
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response.data['id']
+
+    def test_unattended_donations_queue_lists_areas_without_active_admin(self):
+        Donation.objects.create(donor=self.donor_a, item_name='A', pickup_address='x', pickup_pincode='581342',
+                                contact_number='1', area=self.area_a)
+        in_b = Donation.objects.create(donor=self.donor_a, item_name='B', pickup_address='x', pickup_pincode='581999',
+                                       contact_number='1', area=self.area_b)
+        self.auth(self.login('super1'))
+        response = self.client.get('/authapi/unattended-donations')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.ids(response), [])
+
+        self.admin_b.is_active = False
+        self.admin_b.save()
+        response = self.client.get('/authapi/unattended-donations')
+        self.assertEqual(self.ids(response), [in_b.id])
+
+    def test_unattended_donations_queue_is_super_admin_only(self):
+        self.auth(self.login('admina'))
+        response = self.client.get('/authapi/unattended-donations')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def ids(self, response):
+        data = response.data['results'] if isinstance(response.data, dict) else response.data
+        return [d['id'] for d in data]
+
+    def test_donation_rejects_unserved_pincode(self):
+        self.auth(self.login('donora'))
+        response = self.client.post('/authapi/donations/', {
+            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'pickup_pincode': '110001',
+            'contact_number': '1234567890',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('pickup_pincode', response.data)
+
+    def test_donation_requires_pincode(self):
+        self.auth(self.login('donora'))
+        response = self.client.post('/authapi/donations/', {
+            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'contact_number': '1234567890',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_donation_routes_by_pickup_pincode_not_donor_area(self):
+        self.auth(self.login('donora'))
+        response = self.client.post('/authapi/donations/', {
+            'item_name': 'Rice', 'quantity': 5, 'pickup_address': '123 St', 'pickup_pincode': '581999',
+            'contact_number': '1234567890', 'area': self.area_a.id,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Donation.objects.get(id=response.data['id']).area_id, self.area_b.id)
 
     def test_donation_inherits_donor_area(self):
         donation_id = self.create_donation_as('donora')
@@ -409,7 +461,7 @@ class AnalyticsTests(APITestCase):
         )
 
     def login(self, username, password='StrongPass123!'):
-        response = self.client.post('/authapi/auth_login', {'username': username, 'password': password}, format='json')
+        response = self.client.post('/authapi/auth_login', {'email': f'{username}@gmail.com', 'password': password}, format='json')
         return response.data['access']
 
     def auth(self, token):

@@ -1,7 +1,7 @@
 import random
 from django.conf import settings
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.utils import timezone
 from datetime import timedelta
 
@@ -21,6 +21,13 @@ class Area(models.Model):
         return self.name
 
 
+class CustomUserManager(UserManager):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        extra_fields.setdefault('role', 'super_admin')
+        extra_fields.setdefault('is_email_verified', True)
+        return super().create_superuser(username, email, password, **extra_fields)
+
+
 class User(AbstractUser):
     # Define role choices
     ROLES = (
@@ -30,6 +37,10 @@ class User(AbstractUser):
         ('volunteer', 'Volunteer'),
     )
 
+    # Emails must be unique — this is what login now authenticates with,
+    # since usernames aren't guaranteed unique in practice.
+    email = models.EmailField(unique=True)
+
     # Add role field with choices
     role = models.CharField(max_length=15, choices=ROLES,default= 'donor')
     is_email_verified = models.BooleanField(default=False)
@@ -37,6 +48,8 @@ class User(AbstractUser):
     area = models.ForeignKey(
         'Area', on_delete=models.SET_NULL, null=True, blank=True, related_name='users'
     )
+
+    objects = CustomUserManager()
 
     class Meta:
         ordering = ['id']
@@ -101,6 +114,7 @@ class Donation(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     description = models.TextField(blank=True, null=True)
     pickup_address = models.TextField()
+    pickup_pincode = models.CharField(max_length=10, blank=True, default='')
     contact_number = models.CharField(max_length=15)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     volunteer = models.ForeignKey(
