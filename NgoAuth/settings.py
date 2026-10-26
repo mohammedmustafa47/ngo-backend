@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,13 +23,14 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-b$sle-a5)t9u*kbq-#vjgwi(m)xuzj#iavcu5jky6^*u7kaws7'
+# Secrets and environment-specific values come from .env (loaded above), never from this file.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY is not set. Add it to the .env file next to manage.py.')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 
 
@@ -105,24 +107,14 @@ WSGI_APPLICATION = 'NgoAuth.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.mysql",
-#         "HOST": "ngodatabase.clg0aa6qqgju.ap-south-2.rds.amazonaws.com",
-#         "NAME": "ngoproject",
-#         "USER": "admin",
-#         "PASSWORD": "hanzala1234",
-#         "PORT" : "3306"
-#     }
-# }
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "HOST": "localhost",
-        "NAME": "ngoauth",
-        "USER": "root",
-        "PASSWORD": "1234",
-        # "PORT" : "3306"
+        "HOST": os.environ.get('DB_HOST', 'localhost'),
+        "PORT": os.environ.get('DB_PORT', '3306'),
+        "NAME": os.environ.get('DB_NAME', 'ngoauth'),
+        "USER": os.environ.get('DB_USER', 'root'),
+        "PASSWORD": os.environ.get('DB_PASSWORD', ''),
     }
 }
 
@@ -173,7 +165,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'authapi.User'
 
-CORS_ALLOW_ALL_ORIGINS = True
+# Any origin is allowed only while DEBUG is on; otherwise only CORS_ALLOWED_ORIGINS above.
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 # Email settings (used for sending OTP codes for email verification and
 # password reset). Defaults to printing emails to the console during
