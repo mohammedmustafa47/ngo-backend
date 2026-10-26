@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "additionalDirectories": ["C:\\Users\\musta\\OneDrive\\Desktop\\ngoangular"],
+    "deny": [
+      "Bash(git push:*)", "Bash(git pull:*)", "Bash(git fetch:*)", "Bash(git commit:*)",
+      "Bash(git merge:*)", "Bash(git rebase:*)", "Bash(git reset:*)", "Bash(git clean:*)",
+      "Bash(git config:*)", "Bash(gh:*)",
+      "Read(**/.env)", "Read(**/.env.*)", "Read(**/zappa_settings.json)",
+      "Edit(.claude/settings.json)", "Edit(.claude/hooks/**)", "Edit(.git/hooks/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/musta/OneDrive/Desktop/ngoangular/.claude/hooks/guard.js\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
